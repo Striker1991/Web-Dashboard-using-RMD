@@ -1,0 +1,203 @@
+---
+title: "Weather Impact on FDDS"
+author: "Supti"
+date: Refreshed:`r Sys.time()`
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    social: [ "--company's name" ]
+---
+
+<style>                     
+.navbar
+{
+  background-color: black;
+}
+.navbar-brand 
+{
+font-size: 40px;
+color:white!important;
+}
+</style>
+
+
+```{r setup, include=FALSE}
+options(warn=-1)
+library(flexdashboard)
+print("Loaded flexdashboard")
+Sys.sleep(2)
+library(DT)
+print("Loaded DT")
+Sys.sleep(2)
+library(dplyr)
+Sys.sleep(2)
+library(plotly)
+Sys.sleep(2)
+library(raster)
+Sys.sleep(2)
+library(rgdal)
+Sys.sleep(2)
+library(ggplot2)
+
+js <- "(/Alert/).test(value) ? 'red' : (/Amber/).test(value) ? 'orange' :(/No Action/).test(value) ? 'green' : ''"
+
+##Function to change states name first character to capital (Madhya pradesh --> Madhya Pradesh)
+capFirst <- function(row) {
+  s <- row[17]
+  x <- strsplit(s," ")[[1]]
+  paste(toupper(substring(x, 1, 1)), tolower(substring(x, 2)), sep = "", collapse = " ")
+}
+
+##Read your dataset
+pred_data = read.csv("web_dashboard_data.csv", header = TRUE, stringsAsFactors = FALSE)
+pred_data$State <- apply(pred_data, MARGIN = 1,capFirst)
+##Rounding your numerical values
+pred_data$Forecasted.Avg.for.D3 = round(pred_data$Forecasted.Avg.for.D3,2)
+pred_data$Forecasted.Avg.for.D4 = round(pred_data$Forecasted.Avg.for.D4,2)
+##Changes are required based on your needs
+pred_data$Forecasted.Avg.for.D3 <- as.numeric(as.character(pred_data$Forecasted.Avg.for.D3))
+pred_data$Forecasted.Avg.for.D4 <- as.numeric(as.character(pred_data$Forecasted.Avg.for.D4))
+pred_data$bau_miss._D3 <- as.numeric(as.character(pred_data$bau_miss._D3)) / 100
+pred_data$bau_miss._D4 <- as.numeric(as.character(pred_data$bau_miss._D4)) / 100
+pred_data$pred_miss._D3 <- as.numeric(as.character(pred_data$pred_miss._D3)) / 100
+pred_data$pred_miss._D4 <- as.numeric(as.character(pred_data$pred_miss._D4)) / 100
+
+##Factorize the values
+pred_data$Zone <- as.factor(pred_data$Zone)
+pred_data$State <- as.factor(pred_data$State)
+pred_data$City <- as.factor(pred_data$City)
+pred_data$station_code <- as.factor(pred_data$station_code)
+pred_data$Action_D3 <- as.factor(pred_data$Action_D3)
+pred_data$Action_D4 <- as.factor(pred_data$Action_D4)
+
+##Select your required columns
+pred_data_d3 <- dplyr::select(pred_data,Zone, State, City, station_code,Action_D3,bau_miss._D3,pred_miss._D3, Forecasted.Avg.for.D3, pkg_cnt_D3,Latitude, Longitude)
+pred_data_d3 <- pred_data_d3 %>% filter(pred_data_d3$pkg_cnt_D3 > 50)
+
+##Assign colors based on the alerts
+pred_data_d3$color[pred_data_d3$Action_D3 == 'Alert'] <- '#fb0404'
+pred_data_d3$color[pred_data_d3$Action_D3 == 'Amber'] <- 'orange'
+pred_data_d3$color[pred_data_d3$Action_D3 != 'Alert' & pred_data_d3$Action_D3 != 'Amber'] <- 'dark green'
+
+pred_data_d4 <- dplyr::select(pred_data,Zone, State, City, station_code,Action_D4,bau_miss._D4,pred_miss._D4, Forecasted.Avg.for.D4, pkg_cnt_D4,Latitude, Longitude)
+pred_data_d4 <- pred_data_d4 %>% filter(pred_data_d4$pkg_cnt_D4 > 50)
+pred_data_d4$color[pred_data_d4$Action_D4 == 'Alert'] <- '#fb0404'
+pred_data_d4$color[pred_data_d4$Action_D4 == 'Amber'] <- 'orange'
+pred_data_d4$color[pred_data_d4$Action_D4 != 'Alert' & pred_data_d4$Action_D4 != 'Amber'] <- 'dark green'
+
+names(pred_data_d3)[1:9] <- c("Zone","State","City","Station","Action","BAU Miss%","Predicted Miss%","Avg Forecasted Rain","Package Count","Latitude","Longitude","color") 
+names(pred_data_d4)[1:9] <- c("Zone","State","City","Station","Action","BAU Miss%","Predicted Miss%","Avg Forecasted Rain","Package Count","Latitude","Longitude","color") 
+
+##Read the India shape file
+india <- shapefile('Admin2.shp')
+india$ST_NM<-ifelse(india$ST_NM=="NCT of Delhi","Delhi",ifelse(india$ST_NM=="Jammu & Kashmir","Jammu and Kashmir",ifelse(india$ST_NM=="Uttarakhand","Uttaranchal",ifelse(india$ST_NM=="Arunanchal Pradesh","Arunachal Pradesh",india$ST_NM))))
+```
+Rainfall Prediction - Skymet {data-height=650}
+==================================================
+
+Day3 {data-width=500}
+-------------------------------------
+   
+### Rainfall for D3
+
+```{r}
+##Map the rainfall data for D + 3 day where D = current day
+map <- ggplot(data = pred_data_d3, aes(x = Longitude, y = Latitude)) + 
+  geom_polygon(data = india, aes(x = long, y = lat, group = group), color = "black", fill = "light grey", size = 0.15) + 
+  geom_point(data = pred_data_d3, aes(text = paste0("Station Code: ",pred_data_d3$Station,"\n", "Rainfall: ",pred_data_d3$`Avg Forecasted Rain`," mm"), 
+             size = pred_data_d3$`Avg Forecasted Rain`, fill = `Avg Forecasted Rain`, color = `Avg Forecasted Rain`)) +  ggtitle(paste0("Rainfall Prediction for ",weekdays(Sys.Date() + 3),", " ,Sys.Date() + 3)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_gradient(low = "cyan", high = "dark blue") + guides(fill = FALSE)
+
+ggplotly(map, tooltip = "text")
+```
+
+Day4 {data-width=500}
+-------------------------------------
+ 
+### Rainfall for D4
+
+```{r}
+##Map the rainfall data for D + 4 day where D = current day
+map <- ggplot(data = pred_data_d4, aes(x = Longitude, y = Latitude)) + 
+  geom_polygon(data = india, aes(x = long, y = lat, group = group), color = "black", fill = "light grey", size = 0.15) + 
+  geom_point(data = pred_data_d4, aes(text = paste0("Station Code: ",pred_data_d4$Station,"\n", "Rainfall: ",pred_data_d4$`Avg Forecasted Rain`," mm"), 
+             size = pred_data_d4$`Avg Forecasted Rain`, fill = `Avg Forecasted Rain`, color = `Avg Forecasted Rain`)) +  ggtitle(paste0("Rainfall Prediction for ",weekdays(Sys.Date() + 4),", " ,Sys.Date() + 4)) +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_color_gradient(low = "cyan", high = "dark blue") + guides(fill = FALSE)
+
+ggplotly(map, tooltip = "text")
+```
+
+Rainfall Impact - Pan India {data-height=650}
+==================================================
+
+Day3 {data-width=500}
+-------------------------------------
+   
+### D3 Map
+
+```{r}
+##Map the rainfall impact data for D + 3 day where D = current day
+map <- ggplot(data = pred_data_d3, aes(x = Longitude, y = Latitude)) + 
+  geom_polygon(data = india, aes(x = long, y = lat, group = group), colour = "black", fill = "light grey", size = 0.15) + 
+  geom_point(data = pred_data_d3, aes(text = paste0("Station Code: ",Station,"\n", "Package Count: ",`Package Count`),color = Action, size = `Package Count`),alpha = 1) + 
+  scale_color_manual(name = "", values = c("#fb0404", "orange", "dark green")) +
+  ggtitle(paste0("Prediction for ",weekdays(Sys.Date() + 3),", " ,Sys.Date() + 3)) +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+
+ggplotly(map, tooltip = "text")
+```
+
+Day4 {data-width=500}
+-------------------------------------
+ 
+### D4 Map
+
+```{r}
+##Map the rainfall impact data for D + 4 day where D = current day
+map <- ggplot(data = pred_data_d4, aes(x = Longitude, y = Latitude)) + 
+  geom_polygon(data = india, aes(x = long, y = lat, group = group), colour = "black", fill = "light grey", size = 0.15) + 
+  geom_point(data = pred_data_d4, aes(text = paste0("Station Code: ",Station,"\n", "Package Count: ",`Package Count`),color = Action, size = `Package Count`),alpha = 1) + 
+  scale_color_manual(name = "", values = c("#fb0404", "orange", "dark green")) +
+  ggtitle(paste0("Prediction for ",weekdays(Sys.Date() + 4),", " ,Sys.Date() + 4)) +
+  theme(plot.title = element_text(hjust = 0.5), legend.title = element_blank())
+
+ggplotly(map, tooltip = "text")
+```
+
+Prediction for D3
+==================================================
+Day3 Distribution {data-width=500}
+-------------------------------------
+   
+### Prediction for D3
+
+```{r}
+
+datatable(dplyr::select(pred_data_d3, -c('Latitude','Longitude','color')),class = 'cell-border hover',rownames = FALSE ,extensions = c('Buttons'),filter = 'top',options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel'), initComplete = JS(
+  "function(settings, json) {",
+  "$(this.api().table().header()).css({'background-color': '#A5C8DD', 'color': 'black'});",
+  "$(this.api().table().container()).css({'font-size': '8pt'});",
+  "}"),pageLength = 16)) %>% formatStyle(c('Action'),color = JS(js)) %>% 
+  formatPercentage(c('BAU Miss%','Predicted Miss%'),2)
+
+```
+
+Prediction for D4
+==================================================
+Day4 Distribution {data-width=500}
+-------------------------------------
+ 
+### Prediction for D4
+
+```{r}
+
+datatable(dplyr::select(pred_data_d4, -c('Latitude','Longitude','color')),class = 'cell-border hover',rownames = FALSE, extensions = c('Buttons'),filter = 'top',options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel'), initComplete = JS(
+  "function(settings, json) {",
+  "$(this.api().table().header()).css({'background-color': '#A5C8DD', 'color': 'black'});",
+  "$(this.api().table().container()).css({'font-size': '8pt'});",
+  "}"),pageLength = 16)) %>% formatStyle(c('Action'),color = JS(js)) %>% 
+  formatPercentage(c('BAU Miss%','Predicted Miss%'),2)
+```
